@@ -1,7 +1,15 @@
-use elasticsearch::{ http::{ response::Response, transport::Transport }, indices::{ IndicesCreateParts, IndicesExistsParts }, Elasticsearch, IndexParts, SearchParts };
+use elasticsearch::{ http::{ response::Response, transport::Transport }, indices::{ IndicesCreateParts, IndicesExistsParts }, Elasticsearch, IndexParts, SearchParts, auth::Credentials };
 use std::error::Error;
 use serde_json::{ json, Value };
 use serde::{ Deserialize, Serialize };
+use dotenv::dotenv;
+use std::env;
+
+struct Config {
+    api_key: String,
+    api_key_id: String,
+    cloud_id: String,
+}
 
 struct ElSearch {
     client: Elasticsearch,
@@ -11,6 +19,21 @@ impl ElSearch {
     fn new_from_localhost(host: &str) -> Self {
         let transport = Transport::single_node(host).unwrap();
         let es_client = Elasticsearch::new(transport);
+        ElSearch {
+            client: es_client
+        }
+    }
+
+    fn new_from_cloudhost(config: &Config) -> Self {
+        let api_key = &config.api_key;
+        let api_key_id = &config.api_key_id;
+        let cloud_id = &config.cloud_id;
+
+        let credentials = Credentials::ApiKey(api_key_id.to_string(), api_key.to_string());
+        let transport = Transport::cloud(cloud_id, credentials).unwrap();
+
+        let es_client = Elasticsearch::new(transport);
+
         ElSearch {
             client: es_client
         }
@@ -138,9 +161,21 @@ struct Product {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+
+    let cloud_id = env::var("CLOUD_ID")?;
+    let api_key = env::var("API_KEY")?;
+    let api_key_id = env::var("API_KEY_ID")?;
+
+    let config = Config {
+        api_key,
+        api_key_id,
+        cloud_id
+    };
+
     let product_index_name = "products";
 
-    let es = ElSearch::new_from_localhost("http://localhost:9200");
+    let es = ElSearch::new_from_cloudhost(&config);
     
     let is_existing_resp = es.check_index_exists(product_index_name).await?;
     let index_exists = is_existing_resp.status_code().is_success();
@@ -159,18 +194,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let product_doc = json!({
-        "name": "Eco-Friendly Bamboo Toothbrush",
-        "description": "A sustainable toothbrush with a bamboo handle and biodegradable bristles, designed for environmentally conscious users.",
-        "category": "Eco-Friendly Products",
-        "brand": "GreenBrush",
-        "price": 12.99,
-        "rating": 4.6
-    });
+    // let product_doc = json!({
+    //     "name": "UltraSoft Sonic Toothbrush",
+    //     "description": "A high-frequency sonic toothbrush designed for gentle yet effective cleaning, featuring multiple brushing modes and a long-lasting battery.",
+    //     "category": "Health & Personal Care",
+    //     "brand": "SonicCare",
+    //     "price": 99.99,
+    //     "rating": 4.7
+    // });
 
-    let add_resp: Response = es.add_document(product_index_name, &product_doc).await?;
+    // let add_resp: Response = es.add_document(product_index_name, &product_doc).await?;
 
-    println!("{:?}", add_resp);
+    // println!("{:?}", add_resp);
 
     let query = json!(
         {
