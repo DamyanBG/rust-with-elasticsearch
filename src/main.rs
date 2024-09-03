@@ -1,4 +1,4 @@
-use elasticsearch::{ http::{ response::Response, transport::Transport }, indices::{ IndicesCreateParts, IndicesExistsParts }, Elasticsearch, IndexParts, SearchParts, auth::Credentials };
+use elasticsearch::{ auth::Credentials, http::{ request::{Body, JsonBody, NdBody}, response::Response, transport::Transport }, indices::{ IndicesCreateParts, IndicesExistsParts }, Elasticsearch, IndexParts, SearchParts };
 use std::error::Error;
 use serde_json::{ json, Value };
 use serde::{ Deserialize, Serialize };
@@ -73,6 +73,28 @@ impl ElSearch {
             .body(body)
             .send()
             .await?;
+        Ok(response)
+    }
+
+    async fn bulk_create_by_index(&self, index_name: &str, operations: Vec<Value>) -> Result<Response, Box<dyn Error>> {
+        let mut bulk_body = Vec::<JsonBody::<Value>>::new();
+
+        for operation in operations {
+            let jsonbody = JsonBody::new(operation);
+            let create_instruction = json!({
+                "create": {}
+            });
+            let create_instr_jsonbody = JsonBody::new(create_instruction);
+            bulk_body.push(create_instr_jsonbody);
+            bulk_body.push(jsonbody);
+        }
+
+        let response = self.client
+            .bulk(elasticsearch::BulkParts::Index(index_name))
+            .body(bulk_body)
+            .send()
+            .await?;
+
         Ok(response)
     }
     
@@ -159,6 +181,67 @@ struct Product {
     rating: f64,
 }
 
+fn generate_product_data() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "Smartphone",
+            "description": "A smartphone with a high-resolution screen.",
+            "category": "Electronics",
+            "brand": "TechBrand",
+            "price": 699.99,
+            "rating": 4.5
+        }),
+        json!({
+            "name": "Laptop",
+            "description": "A powerful laptop for professionals.",
+            "category": "Computers",
+            "brand": "CompTech",
+            "price": 1299.99,
+            "rating": 4.7
+        }),
+        json!({
+            "name": "Headphones",
+            "description": "Noise-cancelling over-ear headphones.",
+            "category": "Audio",
+            "brand": "SoundMax",
+            "price": 199.99,
+            "rating": 4.3
+        }),
+        json!({
+            "name": "Smartwatch",
+            "description": "A stylish smartwatch with fitness tracking.",
+            "category": "Wearables",
+            "brand": "WristTech",
+            "price": 299.99,
+            "rating": 4.2
+        }),
+        json!({
+            "name": "Tablet",
+            "description": "A lightweight tablet with a 10-inch display.",
+            "category": "Tablets",
+            "brand": "TabBrand",
+            "price": 499.99,
+            "rating": 4.4
+        }),
+        json!({
+            "name": "Gaming Console",
+            "description": "A next-gen gaming console with 4K resolution.",
+            "category": "Gaming",
+            "brand": "GameBox",
+            "price": 499.99,
+            "rating": 4.8
+        }),
+        json!({
+            "name": "Wireless Speaker",
+            "description": "A portable wireless speaker with deep bass.",
+            "category": "Audio",
+            "brand": "SoundWave",
+            "price": 149.99,
+            "rating": 4.6
+        })
+    ]
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -207,25 +290,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // println!("{:?}", add_resp);
 
-    let query = json!(
-        {
-            "query": {
-                "multi_match": {
-                "query": "toothbrush",
-                "fields": ["name", "description"]
-                }
-            }
-        }
-    );
 
-    let search_resp = es.search(product_index_name, &query).await?;
+    // // Search code
+    // let query = json!(
+    //     {
+    //         "query": {
+    //             "multi_match": {
+    //             "query": "toothbrush",
+    //             "fields": ["name", "description"]
+    //             }
+    //         }
+    //     }
+    // );
 
-    let resp_body = search_resp.json::<Value>().await?;
+    // let search_resp = es.search(product_index_name, &query).await?;
 
-    for hit in resp_body["hits"]["hits"].as_array().unwrap() {
-        let product: Product = serde_json::from_value(hit["_source"].clone())?;
-        println!("{:?}", product);
-    }
+    // let resp_body = search_resp.json::<Value>().await?;
+
+    // for hit in resp_body["hits"]["hits"].as_array().unwrap() {
+    //     let product: Product = serde_json::from_value(hit["_source"].clone())?;
+    //     println!("{:?}", product);
+    // }
+
+    // Bulk operation code
+    let products = generate_product_data();
+
+    let bulk_resp = es.bulk_create_by_index(product_index_name, products).await?;
+
+    let bulk_resp_body  = bulk_resp.json::<Value>().await?;
+
+    println!("{}", bulk_resp_body);
+
 
     Ok(())
 }
